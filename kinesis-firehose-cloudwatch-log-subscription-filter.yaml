@@ -1,0 +1,113 @@
+# kinesis-firehose-cloudwatch-log-subscription-filter.yaml
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Kinesis Firehose with CloudWatch Log Subscription Filter'
+
+Parameters:
+  LogGroupName:
+    Type: String
+    Description: Name of the CloudWatch Log Group
+    Default: /my/log/group
+
+  FirehoseName:
+    Type: String
+    Description: Name of the Kinesis Firehose Delivery Stream
+    Default: my-firehose-stream
+
+Resources:
+  FirehoseS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "firehose-destination-${AWS::AccountId}"
+
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FirehoseS3Policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Resource:
+                  - !GetAtt FirehoseS3Bucket.Arn
+                  - !Sub "${FirehoseS3Bucket.Arn}/*"
+
+  FirehoseStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Ref FirehoseName
+      DeliveryStreamType: DirectPut
+      S3DestinationConfiguration:
+        BucketARN: !GetAtt FirehoseS3Bucket.Arn
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 5
+        CompressionFormat: GZIP
+        Prefix: firehose/
+        RoleARN: !GetAtt FirehoseRole.Arn
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref LogGroupName
+      RetentionInDays: 7
+
+  SubscriptionFilterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AllowPutRecordFirehose
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - firehose:PutRecord
+                  - firehose:PutRecordBatch
+                Resource: !GetAtt FirehoseStream.Arn
+
+  SubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: "" # Empty string means all log events
+      DestinationArn: !GetAtt FirehoseStream.Arn
+      RoleArn: !GetAtt SubscriptionFilterRole.Arn
+
+Outputs:
+  FirehoseStreamName:
+    Description: The name of the Kinesis Firehose Delivery Stream
+    Value: !Ref FirehoseStream
+
+  FirehoseStreamArn:
+    Description: The ARN of the Kinesis Firehose Delivery Stream
+    Value: !GetAtt FirehoseStream.Arn
+
+  S3BucketName:
+    Description: The name of the S3 bucket for Firehose output
+    Value: !Ref FirehoseS3Bucket
+
+  LogGroupName:
+    Description: The name of the CloudWatch Log Group
+    Value: !Ref LogGroup

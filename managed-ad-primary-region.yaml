@@ -1,0 +1,150 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Managed AD with Log Forwarding to CloudWatch Logs'
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: ManagedAD-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 1
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  Subnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet1
+      RouteTableId: !Ref RouteTable
+
+  Subnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet2
+      RouteTableId: !Ref RouteTable
+
+  ManagedAD:
+    Type: AWS::DirectoryService::MicrosoftAD
+    Properties:
+      Name: example.com
+      ShortName: EXAMPLE
+      Password: !Join 
+        - ''
+        - - '{{resolve:secretsmanager:'
+          - !Ref ADAdminSecret
+          - ':SecretString:password}}'
+      Edition: Enterprise
+      VpcSettings: 
+        VpcId: !Ref VPC
+        SubnetIds: 
+          - !Ref Subnet1
+          - !Ref Subnet2
+
+  ADAdminSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: 'Managed AD Admin Password'
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "Admin"}'
+        GenerateStringKey: 'password'
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+
+  ADLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/directoryservice/${ManagedAD}'
+      RetentionInDays: 30
+
+  CloudWatchLogsResourcePolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: DSLogSubscription
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ds.amazonaws.com"
+              },
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/directoryservice/*"
+            }
+          ]
+        }
+
+Outputs:
+  ManagedADId:
+    Description: ID of the created Managed AD
+    Value: !Ref ManagedAD
+
+  LogGroupName:
+    Description: Name of the CloudWatch Log Group
+    Value: !Ref ADLogGroup
+
+  VPCId:
+    Description: ID of the created VPC
+    Value: !Ref VPC
+
+  Subnet1Id:
+    Description: ID of the first subnet
+    Value: !Ref Subnet1
+
+  Subnet2Id:
+    Description: ID of the second subnet
+    Value: !Ref Subnet2
+
+  ADAdminSecretName:
+    Description: Name of the Secrets Manager secret containing the AD admin password
+    Value: !Ref ADAdminSecret

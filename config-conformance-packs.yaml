@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Deploys AWS Config Conformance Pack'
+
+Parameters:
+  ConformancePackName:
+    Type: String
+    Default: MyConformancePack
+    Description: Name of the Conformance Pack
+
+  ConformancePackBucketName:
+    Type: String
+    Description: Name of the S3 bucket containing the conformance pack template
+
+Resources:
+  ConfigBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'config-bucket-${AWS::AccountId}-${AWS::Region}'
+      VersioningConfiguration:
+        Status: Enabled
+
+  ConfigRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: config.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWS_ConfigRole
+      Policies:
+        - PolicyName: ConfigBucketAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                  - s3:GetObject
+                Resource: 
+                  - !GetAtt ConfigBucket.Arn
+                  - !Sub '${ConfigBucket.Arn}/*'
+                  - !Sub 'arn:aws:s3:::${ConformancePackBucketName}'
+                  - !Sub 'arn:aws:s3:::${ConformancePackBucketName}/*'
+
+  ConfigRecorder:
+    Type: AWS::Config::ConfigurationRecorder
+    Properties:
+      Name: DefaultRecorder
+      RoleARN: !GetAtt ConfigRole.Arn
+      RecordingGroup:
+        AllSupported: true
+        IncludeGlobalResourceTypes: true
+
+  ConfigDeliveryChannel:
+    Type: AWS::Config::DeliveryChannel
+    Properties:
+      ConfigSnapshotDeliveryProperties:
+        DeliveryFrequency: One_Hour
+      S3BucketName: !Ref ConfigBucket
+      
+  ConfigConformancePack:
+    Type: AWS::Config::ConformancePack
+    Properties:
+      ConformancePackName: !Ref ConformancePackName
+      TemplateS3Uri: !Sub 's3://${ConformancePackBucketName}/my-conformance-pack.yaml'
+    DependsOn: 
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+
+Outputs:
+  ConformancePackName:
+    Description: The name of the deployed Conformance Pack
+    Value: !Ref ConfigConformancePack

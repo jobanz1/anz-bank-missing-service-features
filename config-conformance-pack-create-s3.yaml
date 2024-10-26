@@ -1,0 +1,18 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Creates an S3 bucket for storing the conformance pack template'
+
+Resources:
+  ConformancePackBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'conformance-pack-bucket-${AWS::AccountId}-${AWS::Region}'
+      VersioningConfiguration:
+        Status: Enabled
+
+Outputs:
+  BucketName:
+    Description: 'Name of the created S3 bucket'
+    Value: !Ref ConformancePackBucket
+  BucketARN:
+    Description: 'ARN of the created S3 bucket'
+    Value: !GetAtt ConformancePackBucket.Arn

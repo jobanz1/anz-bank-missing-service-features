@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Secondary Region VPC Setup for Managed AD Replication'
+
+Resources:
+  SecondaryVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.1.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: SecondaryManagedAD-VPC
+
+  SecondarySubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SecondaryVPC
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: 10.1.1.0/24
+      MapPublicIpOnLaunch: false
+
+  SecondarySubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SecondaryVPC
+      AvailabilityZone: !Select 
+        - 1
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: 10.1.2.0/24
+      MapPublicIpOnLaunch: false
+
+Outputs:
+  SecondaryVPCId:
+    Description: The ID of the Secondary VPC
+    Value: !Ref SecondaryVPC
+
+  SecondarySubnet1Id:
+    Description: The ID of the first subnet in the Secondary VPC
+    Value: !Ref SecondarySubnet1
+
+  SecondarySubnet2Id:
+    Description: The ID of the second subnet in the Secondary VPC
+    Value: !Ref SecondarySubnet2
+
+  SecondaryRegion:
+    Description: The secondary region for potential AD replication
+    Value: !Ref 'AWS::Region'

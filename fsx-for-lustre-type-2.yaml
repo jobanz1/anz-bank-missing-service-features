@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template to check FSx for Lustre Type 2 availability'
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: FSx-Lustre-VPC
+
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: FSx-Lustre-Subnet
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for FSx Lustre file system
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 988
+          ToPort: 988
+          CidrIp: 10.0.0.0/16
+
+  LustreFileSystem:
+    Type: AWS::FSx::FileSystem
+    Properties:
+      FileSystemType: LUSTRE
+      StorageCapacity: 100
+      SubnetIds: 
+        - !Ref Subnet
+      SecurityGroupIds: 
+        - !Ref SecurityGroup
+      LustreConfiguration:
+        DeploymentType: PERSISTENT_2
+        PerUnitStorageThroughput: 125
+
+Outputs:
+  VPCId:
+    Description: ID of the created VPC
+    Value: !Ref VPC
+
+  SubnetId:
+    Description: ID of the created Subnet
+    Value: !Ref Subnet
+
+  SecurityGroupId:
+    Description: ID of the created Security Group
+    Value: !Ref SecurityGroup
+
+  FileSystemId:
+    Description: ID of the created FSx for Lustre file system
+    Value: !Ref LustreFileSystem
