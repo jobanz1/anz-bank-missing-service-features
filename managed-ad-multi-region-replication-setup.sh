@@ -3,10 +3,10 @@
 set -e
 
 # Configuration
-PRIMARY_REGION="ap-southeast-2"
-SECONDARY_REGION="us-west-2"
+PRIMARY_REGION=$AWS_REGION
+SECONDARY_REGION=$AWS_REGION_SECONDARY
 PRIMARY_STACK_NAME="managed-ad-primary-region" 
-SECONDARY_STACK_NAME="managed-ad-multi-region-replication" # managed-ad-second-region-vpc
+SECONDARY_STACK_NAME="managed-ad-second-region-vpc"
 
 # Function to get CloudFormation output value
 get_cf_output() {
@@ -42,23 +42,29 @@ echo "Replication setup initiated. Checking status..."
 
 # Check replication status
 while true; do
-    STATUS=$(aws ds describe-directories \
-        --directory-ids "$DIRECTORY_ID" \
+    REGION_INFO=$(aws ds describe-regions \
+        --directory-id "$DIRECTORY_ID" \
         --region "$PRIMARY_REGION" \
-        --query "DirectoryDescriptions[0].RegionsInfo.AdditionalRegions[0].Status" \
-        --output text)
+        --query "RegionsDescription[?RegionName=='$SECONDARY_REGION']" \
+        --output json)
     
-    echo "Replication status: $STATUS"
+    STATUS=$(echo $REGION_INFO | jq -r '.[0].Status // empty')
     
-    if [ "$STATUS" = "Active" ]; then
-        echo "Replication is now active!"
-        break
-    elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Deleted" ]; then
-        echo "Replication setup failed."
-        exit 1
+    if [ -z "$STATUS" ]; then
+        echo "Replication status: Not found. The secondary region may not have been added yet."
+    else
+        echo "Replication status: $STATUS"
+        
+        if [ "$STATUS" = "Active" ]; then
+            echo "Replication is now active!"
+            break
+        elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Deleted" ]; then
+            echo "Replication setup failed."
+            exit 1
+        fi
     fi
     
-    sleep 30  # Wait for 30 seconds before checking again
+    sleep 60  # Wait for 60 seconds before checking again
 done
 
 echo "Multi-region replication setup complete."
